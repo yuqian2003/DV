@@ -1,0 +1,789 @@
+
+---
+title: "Kobe Bryant Shot Selection"
+author: "Group x"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+---
+
+```{r}
+library(flexdashboard)
+library(DT)
+library(RColorBrewer)
+library(tidyverse)
+library(gridExtra)
+library(knitr)
+library(magick)
+library(patchwork) 
+library(viridis) 
+library(gganimate)
+library(ggalluvial)
+library(scales)
+library(plotly)
+library(readr)
+library(sf)
+library(rnaturalearth)
+library(dplyr)
+library(treemap)
+library(GGally)
+library(ggplot2)
+```
+
+
+
+```{r}
+shots <- read_csv("kobe-bryant-shot-selection/data.csv", show_col_types = FALSE) %>%
+  drop_na()
+```
+
+```{r}
+summary(shots)
+```
+
+```{r}
+str(shots)
+```
+
+```{r}
+## Then we find some NAs in the shot_made_flag column.We remove all rows with missing values using the na.omit() function.
+shots <- na.omit(shots)
+```
+
+## TASK1 Shot Type Visualization
+## Objective: Show the spatial distribution of Kobe's different shot types (jump shot vs. other shot types)
+## Plot the geographical distribution of all shot points, distinguishing between jump shots (gray) and non-jump shots (color)
+```{r}
+p <- ggplot() + 
+  geom_point(
+    data = shots %>% filter(combined_shot_type == "Jump Shot"),
+    aes(x = lon, y = lat),
+    colour = "grey",
+    alpha = 0.3,
+    size = 0.3 
+  ) +
+  geom_point(
+    data = shots %>% filter(combined_shot_type != "Jump Shot"),
+    aes(x = lon, y = lat, colour = combined_shot_type),
+    alpha = 0.8,
+    size = 0.6 
+  ) +
+  labs(title = "Shot type") +
+  ylim(c(33.7, 34.0883)) +
+  theme_void() +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "white"), 
+    plot.background = element_rect(fill = "white")
+  )
+
+ggsave("shot_plot1.png", plot = p, width = 4, height = 3, bg = "white")
+```
+
+
+```{r}
+library(magick)
+shot_image <- image_read("shot_plot1.png")
+print(shot_image)
+```
+
+## TASK2 Shot Zone Analysis
+## Analyzing the hot zone distribution of shots across different dimensions (range, region, base category)
+
+```{r}
+# Shot zone range
+p1 <- ggplot(shots, aes(x=lon, y=lat)) +
+  geom_point(aes(color=shot_zone_range)) +
+  labs(title="Shot zone range") +
+  ylim(c(33.7, 34.0883)) +
+  theme_void() +
+  theme(legend.position="none",
+        plot.title=element_text(hjust=0.5)) 
+
+# Frequency for each shot zone range
+p2 <- ggplot(shots, aes(x=fct_infreq(shot_zone_range))) + 
+  geom_bar(aes(fill=shot_zone_range)) +
+  labs(y="Frequency") +
+  theme_bw() +
+  theme(axis.title.x=element_blank(), 
+        legend.position="none")
+
+# Subplot
+grid.arrange(p1, p2, layout_matrix=cbind(c(1,2)))
+```
+
+```{r}
+# Shot zone area
+p3 <- ggplot(shots, aes(x=lon, y=lat)) +
+  geom_point(aes(colour=shot_zone_area)) +
+  labs(title="Shot zone area") +
+  ylim(c(33.7, 34.0883)) +
+  theme_void() +
+  theme(legend.position="none",
+        plot.title=element_text(hjust=0.5)) 
+
+# Frequency for each shot zone area
+p4 <- ggplot(shots, aes(x=fct_infreq(shot_zone_area))) + 
+  geom_bar(aes(fill=shot_zone_area)) +
+  labs(y="Frequency") +
+  theme_bw() +
+  theme(axis.text.x=element_text(size=7),
+        axis.title.x=element_blank(), 
+        legend.position="none")
+
+# Subplot
+grid.arrange(p3, p4, layout_matrix=cbind(c(1,2)))
+```
+
+```{r}
+# Shot zone basic
+p5 <- ggplot(shots, aes(x=lon, y=lat)) +
+  geom_point(aes(color=shot_zone_basic)) +
+  labs(title="Shot zone basic") +
+  ylim(c(33.7, 34.0883)) +
+  theme_void() +
+  theme(legend.position="none",
+        plot.title=element_text(hjust=0.5))
+
+# Frequency for each shot zone basic
+p6 <- ggplot(shots, aes(x=fct_infreq(shot_zone_basic))) + 
+  geom_bar(aes(fill=shot_zone_basic)) +
+  labs(y="Frequency") +
+  theme_bw() +
+  theme(axis.text.x=element_text(size=6.3),
+        axis.title.x=element_blank(), 
+        legend.position="none")
+
+# Subplot
+grid.arrange(p5, p6, layout_matrix=cbind(c(1,2)))
+```
+
+## TASK3 Static Field Goal Percentage analysis
+## Objective: Explore the relationship between hit rate and other variables
+```{r}
+accuracy_palette <- viridis::plasma(10, direction = -1, alpha = 0.8)
+```
+
+```{r}
+
+sysfonts::font_add_google("Noto Sans SC", "Noto Sans")
+showtext::showtext_opts(dpi = 600)
+showtext::showtext_auto()
+
+# 1. Shot type Percentage --------------------------------------------------------
+p1 <- shots %>%
+  group_by(combined_shot_type) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = reorder(combined_shot_type, accuracy), y = accuracy)) +
+  geom_col(aes(fill = accuracy), width = 0.7) +
+  scale_fill_viridis_c(option = "plasma") +
+  scale_y_continuous(labels = percent) +
+  coord_flip() + 
+  labs(x = "Type of shot", y = "Hit rate", title = "Percentage by shot type") +
+  theme_minimal()
+
+# 2. Season hit rate trends --------------------------------------------------------
+p2 <- shots %>%
+  group_by(season) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = season, y = accuracy, group = 1)) +
+  geom_line(color = "#2c7bb6", linewidth = 1.2) +
+  geom_point(color = "#d7191c", size = 3) +
+  scale_y_continuous(labels = percent, limits = c(0, 0.6)) +
+  labs(x = "Season", y = "Hit rate", title = "Season hit rate trends") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# 3. Shooting zone percentage --------------------------------------------------------
+p3 <- shots %>%
+  group_by(shot_zone_basic) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = reorder(shot_zone_basic, accuracy), y = accuracy)) +
+  geom_col(aes(fill = accuracy), width = 0.7) +
+  scale_fill_viridis_c(option = "viridis") +
+  scale_y_continuous(labels = percent) +
+  coord_flip() +
+  labs(x = "Shooting zone", y = "Hit rate", title = "Shooting percentage by shooting area") +
+  theme_minimal()
+
+# 4. Shooting distance percentage --------------------------------------------------------
+p4 <- shots %>%
+  mutate(distance_group = cut(shot_distance, 
+                             breaks = c(0, 5, 10, 15, 20, 25, Inf),
+                             labels = c("0-5ft", "5-10ft", "10-15ft", 
+                                      "15-20ft", "20-25ft", "25+ft"))) %>%
+  group_by(distance_group) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = distance_group, y = accuracy)) +
+  geom_col(aes(fill = accuracy), width = 0.7) +
+  scale_fill_viridis_c(option = "magma") +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Shooting distance", y = "Hit Rate", title = "Shooting percentage by shooting distance") +
+  theme_bw()
+
+# 5. Shooting percentage for the rest of the game ----------------------------------------------------
+p5 <- shots %>%
+  group_by(minutes_remaining) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = factor(minutes_remaining), y = accuracy)) +
+  geom_col(aes(fill = accuracy), width = 0.7) +
+  scale_fill_viridis_c(option = "inferno") +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Minutes remaining", y = "Hit Rate", title = "Shooting percentage for the rest of the game") +
+  theme_minimal()
+
+# 6. Opponent Shooting Accuracy Analysis --------------------------------------
+p6 <- shots %>%
+  group_by(opponent) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  top_n(10, accuracy) %>% # Display top 10 opponents with highest shooting accuracy
+  ggplot(aes(x = reorder(opponent, accuracy), y = accuracy)) +
+  geom_col(aes(fill = accuracy), width = 0.7) +
+  scale_fill_viridis_c(option = "cividis") +
+  scale_y_continuous(labels = percent) +
+  coord_flip() +
+  labs(x = "Opponent Team", y = "Shooting Accuracy", title = "Top 10 Opponent Shooting Accuracy") +
+  theme_bw()
+
+# Combine All Subplots --------------------------------------------------------
+final_plot <- (p1 + p2) / (p3 + p4) / (p5 + p6) +
+  plot_annotation(
+    title = "Kobe Bryant Basic Shooting Accuracy Analysis",
+    theme = theme(
+      text = element_text(family = "Noto Sans"),
+      plot.title = element_text(
+        size = 24, 
+        hjust = 0.5,
+        margin = margin(b = 20)
+      ),
+      plot.margin = margin(2, 2, 2, 2, "cm")
+    )
+  )
+
+ggsave("kobe_basic_analysis.png", final_plot, 
+       width = 16, height = 12, dpi = 600,
+       bg = "white")
+
+```
+
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+if(file.exists("kobe_basic_analysis.png")) {
+  knitr::include_graphics("kobe_basic_analysis.png")
+} else {
+  cat("Chart is being generated, please refresh later...")
+}
+```
+
+```{r}
+options(timeout = 120)
+sysfonts::font_add_google("Noto Sans SC", "Noto Sans")
+showtext::showtext_opts(dpi = 600)
+showtext::showtext_auto()
+
+my_theme <- function() {
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size=14, face="bold"),
+    axis.text.x = element_text(angle=30, hjust=1, size=10),
+    axis.title = element_text(size=12)
+  )
+}
+
+# 1. Shooting Accuracy by Shot Type (with trend line)
+p1 <- shots %>%
+  group_by(combined_shot_type) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x=reorder(combined_shot_type, accuracy), y=accuracy, group=1)) +
+  geom_line(color="#1f77b4", linewidth=1) +
+  geom_point(color="#ff7f0e", size=2) +
+  scale_y_continuous(labels=percent) +
+  labs(x="", y="Accuracy", title="Shooting Accuracy by Shot Type") +
+  my_theme()
+
+# 2. Seasonal Shooting Accuracy Trend
+p2 <- shots %>%
+  group_by(season) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x=season, y=accuracy, group=1)) +
+  geom_line(color="#2ca02c", linewidth=1) +
+  geom_point(color="#d62728", size=2) +
+  scale_y_continuous(labels=percent) +
+  labs(x="", y="Accuracy", title="Seasonal Shooting Accuracy Trend") +
+  my_theme()
+
+# 3. Shooting Accuracy by Zone
+p3 <- shots %>%
+  group_by(shot_zone_basic) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x=reorder(shot_zone_basic, accuracy), y=accuracy, group=1)) +
+  geom_line(color="#9467bd", linewidth=1) +
+  geom_point(color="#8c564b", size=2) +
+  scale_y_continuous(labels=percent) +
+  labs(x="", y="Accuracy", title="Shooting Accuracy by Zone") +
+  my_theme()
+
+# 4. Shooting Accuracy by Distance
+p4 <- shots %>%
+  mutate(distance_group = cut(shot_distance, 
+                            breaks = c(0,5,10,15,20,25,Inf),
+                            labels = c("0-5","5-10","10-15","15-20","20-25","25+"))) %>%
+  group_by(distance_group) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x=distance_group, y=accuracy, group=1)) +
+  geom_line(color="#e377c2", linewidth=1) +
+  geom_point(color="#7f7f7f", size=2) +
+  scale_y_continuous(labels=percent) +
+  labs(x="Distance (ft)", y="Accuracy", title="Shooting Accuracy by Distance") +
+  my_theme()
+
+# 5. Shooting Accuracy by Game Time
+p5 <- shots %>%
+  group_by(minutes_remaining) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x=minutes_remaining, y=accuracy)) +
+  geom_line(color="#17becf", linewidth=1) +
+  geom_point(color="#bcbd22", size=2) +
+  scale_y_continuous(labels=percent) +
+  labs(x="Minutes Remaining", y="Accuracy", title="Shooting Accuracy by Game Time") +
+  my_theme()
+
+# 6. Opponent Shooting Accuracy
+p6 <- shots %>%
+  group_by(opponent) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  top_n(10, accuracy) %>%
+  ggplot(aes(x=reorder(opponent, accuracy), y=accuracy, group=1)) +
+  geom_line(color="#ff9896", linewidth=1) +
+  geom_point(color="#aec7e8", size=2) +
+  scale_y_continuous
+
+```
+
+```{r echo=FALSE, out.width="100%", fig.align='center'}
+if(file.exists("combined_plot.png")) {
+  knitr::include_graphics("combined_plot.png")
+} else {
+  cat("Chart is being generated, please refresh later...")
+}
+```
+
+## TASK4-1 常规赛和季后赛命中率趋势对比
+```{r}
+p_playoff_trend <- shots %>%
+  group_by(season, playoffs) %>%
+  summarise(
+    accuracy = mean(shot_made_flag),
+    attempts = n()
+  ) %>%
+  ggplot(aes(
+    x = season, y = accuracy,
+    color = factor(playoffs),      # ← 这里强制把 0/1 变成离散
+    group = factor(playoffs)
+  )) +
+  geom_line(linewidth = 1.2) +
+  geom_point(aes(size = attempts), alpha = 0.8) +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_color_manual(
+    values = c("#E69F00", "#56B4E9"),
+    labels = c("常规赛", "季后赛")
+  ) +
+  labs(
+    title = "季后赛 vs 常规赛命中率趋势",
+    x = "赛季", y = "命中率",
+    color = "比赛类型", size = "出手次数"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+p_playoff_trend
+```
+## TASK4-2 比赛剩余时间影响
+```{r}
+p_time_impact <- shots %>%
+  mutate(
+    total_time_left = minutes_remaining + seconds_remaining/60,
+    time_bin = cut(total_time_left, breaks = seq(0, 12, 1)),
+    period = factor(period)
+  ) %>%
+  group_by(period, time_bin) %>%
+  summarise(accuracy = mean(shot_made_flag)) %>%
+  ggplot(aes(x = period, y = time_bin, fill = accuracy)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis(option = "magma", labels = scales::percent) +
+  labs(title = "FG% by Game Period and Remaining Time",
+       x = "Period", y = "Minutes Remaining",
+       fill = "FG%") +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+
+p_time_impact
+```
+## TASK4-3 关键时刻表现演变
+```{r}
+p_clutch_evo <- shots %>%
+  filter(period >= 4, minutes_remaining <= 2) %>%
+  group_by(season) %>%
+  summarise(
+    clutch_acc = mean(shot_made_flag),
+    attempts = n()
+  ) %>%
+  ggplot(aes(x = season, y = clutch_acc, group = 1)) +
+  geom_line(color = "#D55E00", linewidth = 1) +
+  geom_point(aes(size = attempts), color = "#0072B2") +
+  geom_text(aes(label = ifelse(attempts > 30, 
+                              paste0(round(clutch_acc*100), "%"), "")),
+            vjust = -1) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.7)) +
+  labs(title = "Clutch Performance Evolution (Last 2 mins in 4th/OT)",
+       x = "Season", y = "FG%") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_clutch_evo
+```
+## TASK4-4 对手两分/三分对比图
+```{r}
+p_opponent_compare <- shots %>%
+  group_by(opponent) %>%
+  summarise(
+    TwoPT = mean(shot_made_flag[shot_type == "2PT Field Goal"]),
+    ThreePT = mean(shot_made_flag[shot_type == "3PT Field Goal"]),
+    Attempts = n()
+  ) %>%
+  filter(Attempts >= 100) %>%
+  ggplot(aes(x = reorder(opponent, TwoPT - ThreePT))) +
+  geom_segment(aes(xend = opponent, y = ThreePT, yend = TwoPT), 
+               color = "gray70") +
+  geom_point(aes(y = TwoPT, color = "2PT"), size = 3) +
+  geom_point(aes(y = ThreePT, color = "3PT"), size = 3) +
+  geom_text(aes(y = (TwoPT + ThreePT)/2, 
+                label = paste0(round((TwoPT - ThreePT)*100), "%")),
+            size = 3, color = "black") +
+  coord_flip() +
+  scale_color_manual(values = c("#1F78B4", "#33A02C")) +
+  labs(title = "2PT vs 3PT FG% Against Opponents",
+       y = "Field Goal %", x = "") +
+  theme_minimal()
+p_opponent_compare
+```
+## Task4-5 投篮区域效率演变
+```{r}
+p_zone_evo <- shots %>%
+  group_by(season, shot_zone_basic) %>%
+  summarise(
+    FG = mean(shot_made_flag),
+    Attempts = n()
+  ) %>%
+  filter(Attempts >= 30) %>%
+  ggplot(aes(x = season, y = FG, 
+            color = shot_zone_basic, group = shot_zone_basic)) +
+  geom_line(linewidth = 1, alpha = 0.8) +
+  geom_point(aes(size = Attempts), alpha = 0.7) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_size_continuous(range = c(1, 8)) +
+  labs(title = "Shot Zone Efficiency Evolution",
+       x = "Season", y = "Field Goal %",
+       color = "Zone", size = "Attempts") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_zone_evo
+```
+
+## TASK5 关键时刻热力图（Clutch Heatmap）揭示科比在比赛最后两分钟的最有效的投篮区域// 红色区域表示该区域关键时刻命中率超过50%
+```{r}
+clutch_data <- shots %>%
+  filter(period >= 4, minutes_remaining <= 2, !is.na(shot_made_flag))
+
+ggplot(clutch_data, aes(x = loc_x, y = loc_y, z = shot_made_flag)) +
+  stat_summary_hex(fun = mean, bins = 30) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlOrRd"), 
+                       limits = c(0, 0.6)) +
+  annotate("text", x = 0, y = -35, label = "关键时刻命中率", size = 5) +
+  theme_void()
+```
+## 按比赛时间分组的命中率热力图  -- 把每节剩余时间切成 5 个区间：0‑1、1‑3、3‑6、6‑10分钟
+```{r}
+shots %>%
+  mutate(min_bucket = cut(minutes_remaining,
+                          breaks = c(0, 1, 3, 6, 10),
+                          include.lowest = TRUE,
+                          labels = c("0-1", "1-3", "3-6", "6-10"))) %>%
+  group_by(period, min_bucket) %>%
+  summarise(FG = mean(shot_made_flag, na.rm = TRUE),
+            Attempts = n()) %>%
+  ggplot(aes(period, min_bucket, fill = FG)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = scales::percent(FG, accuracy = 1)), size = 3) +
+  scale_fill_viridis_c(name = "FG%") +
+  scale_y_discrete(limits = rev) +
+  labs(title = "Clutch Performance Heatmap (FG%)",
+       x = "Period", y = "Minutes Remaining") +
+  theme_minimal()
+```
+
+## TASK6 动作-区域桑基图（Sankey Diagram）
+## 大部分流带又粗又偏紫，说明 最高出手量集中在命中率约 40% 左右的动作‑区域组合；而呈黄‑橙色的极高命中率路线虽效率出众，却明显很细，使用频率偏低。反之，也能看到少数深蓝流带——低效且出手不多。
+```{r}
+action_flow <- shots %>%
+  filter(!is.na(shot_made_flag)) %>%
+  group_by(action_type, shot_zone_basic) %>%
+  summarise(
+    n = n(),
+    fg_pct = mean(shot_made_flag),
+    .groups = 'drop'
+  ) %>%
+  top_n(20, n) # 取前20常见组合
+
+ggplot(action_flow,
+       aes(axis1 = action_type, axis2 = shot_zone_basic,
+           y = n, fill = fg_pct)) +
+  geom_alluvium(width = 1/12) +
+  geom_stratum(width = 1/12, fill = "grey", color = "white") +
+  scale_fill_viridis_c(option = "C") +
+  theme_minimal()
+```
+
+
+
+## TASK7 科比投篮空间模式的极坐标可视化与交互分析
+## 使用 极坐标系 来同时呈现投篮效率（命中率）与投篮频率（出手次数）的空间分布特征
+
+```{r}
+polar_data <- shots %>%
+  filter(!is.na(shot_made_flag)) %>%
+  mutate(
+    # 计算投篮角度（‑180°‑180°）
+    angle_deg = atan2(loc_y, loc_x) * 180 / pi,
+    # 15° 为一个角度区间
+    angle_bin = cut(angle_deg, breaks = seq(-180, 180, by = 15)),
+    # 距离分区（英尺）
+    dist_bin = cut(
+      shot_distance,
+      breaks  = c(0, 8, 16, 24, 30, Inf),
+      labels  = c("0‑8ft", "8‑16ft", "16‑24ft", "24‑30ft", "30+ft"),
+      right   = FALSE
+    )
+  )
+
+# --------------------------
+# 图1：极坐标效率热力图
+# --------------------------
+p_efficiency <- polar_data %>%
+  group_by(angle_bin, dist_bin) %>%
+  summarise(
+    FG_pct   = mean(shot_made_flag),
+    attempts = n(),
+    .groups  = "drop"
+  ) %>%
+  ggplot(aes(angle_bin, dist_bin, fill = FG_pct)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  coord_polar(start = -pi / 2) +           # 0° 指向右侧
+  scale_fill_viridis(
+    option = "plasma",
+    limits = c(0.20, 0.60),
+    labels = percent_format(accuracy = 1)
+  ) +
+  labs(
+    title = "投篮效率热力图（颜色 = 命中率）",
+    x     = "",
+    y     = "距离分区",
+    fill  = "FG%"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x    = element_text(angle = 90, vjust = 0.5),
+    panel.grid.major = element_line(color = "grey90")
+  )
+
+# --------------------------
+# 图2：极坐标角度分布图
+# --------------------------
+p_distribution <- polar_data %>%
+  ggplot(aes(angle_bin, fill = after_stat(count))) +
+  geom_bar(width = 0.9, color = "white") +
+  coord_polar(start = -pi / 2) +
+  scale_fill_viridis(
+    option = "viridis",
+    trans  = "sqrt",                         # 平方根增强对比
+    guide  = guide_colorsteps(barwidth = 15)
+  ) +
+  labs(
+    title = "投篮角度分布（颜色 = 出手次数）",
+    x     = "角度区间（每 15°）",
+    y     = ""
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x     = element_text(angle = 90, vjust = 0.5),
+    legend.position = "bottom"
+  )
+
+# --------------------------
+# 组合静态图（Patchwork）
+# --------------------------
+static_plot <- (p_efficiency + p_distribution) +
+  plot_annotation(
+    title    = "科比投篮空间模式的双极坐标诊断",
+    subtitle = "左图：命中率效率  |  右图：出手频率分布",
+    theme    = theme(plot.title = element_text(size = 16, face = "bold"))
+  )
+
+print(static_plot)
+
+# --------------------------
+# 交互式极坐标（Plotly 原生）
+# --------------------------
+eff_df <- polar_data %>%
+  group_by(angle_bin, dist_bin) %>%
+  summarise(
+    FG_pct   = mean(shot_made_flag),
+    attempts = n(),
+    .groups  = "drop"
+  ) %>%
+  mutate(
+    # 每 15° 区间中心角：(-180,-165]→‑172.5 … (165,180]→172.5，再顺时针旋转 90°
+    theta = as.numeric(sub("\\((.*?),.*", "\\1", angle_bin)) + 7.5,
+    # 距离段映射到离散半径
+    r = case_when(
+      dist_bin == "0‑8ft"   ~  4,
+      dist_bin == "8‑16ft"  ~ 12,
+      dist_bin == "16‑24ft" ~ 20,
+      dist_bin == "24‑30ft" ~ 27,
+      TRUE                  ~ 34        # 30+ft
+    )
+  )
+
+interactive_plot <- plot_ly(
+  eff_df,
+  type  = "scatterpolar",
+  mode  = "markers",
+  theta = ~theta,
+  r     = ~r,
+  text  = ~paste0(
+    "角度区间: ", angle_bin, "<br>",
+    "距离: ", dist_bin, "<br>",
+    "命中率: ", percent(FG_pct, accuracy = 0.1), "<br>",
+    "出手次数: ", attempts
+  ),
+  hoverinfo = "text",
+  marker = list(
+    size       = ~sqrt(attempts) * 2,    # √尝试次数放大
+    color      = ~FG_pct,
+    colorscale = "Plasma",
+    cmin       = 0.20,
+    cmax       = 0.60,
+    colorbar   = list(title = "FG%")
+  )
+) %>%
+  layout(
+    title = "投篮效率与频率（交互式极坐标）",
+    polar = list(angularaxis = list(rotation = 90))
+  )
+
+interactive_plot
+
+```
+
+
+## TASK8-1 动态出手演变动画
+## 动态展示科比从早期冲击篮筐到后期中远距离的转变过程。   展示所有投篮点随赛季的位置变化
+
+```{r generate-gif, include=FALSE}
+library(ggplot2)
+library(gganimate)
+library(gifski)
+
+p_anim <- shots %>%
+  ggplot(aes(loc_x, loc_y, color = shot_made_flag)) +
+  geom_point(alpha = 0.3) +
+  transition_states(season, transition_length = 2) +
+  labs(title = "Season: {closest_state}")
+
+anim_obj <- animate(
+  p_anim,
+  fps      = 10,
+  duration = 20,
+  renderer = gifski_renderer()
+)
+
+anim_save("season_trend.gif", animation = anim_obj)
+```
+
+```{r}
+knitr::include_graphics("season_trend.gif")
+```
+
+## TASK8-2
+## 比较不同类型投篮的空间策略演变（按照两分 / 三分 分布）
+```{r generate-shot-heatmap-gif, include=FALSE}
+library(ggplot2)
+library(gganimate)
+library(gifski)
+
+p_heatmap_anim <- shots %>%
+  ggplot(aes(x = loc_x, y = loc_y, color = shot_made_flag)) +
+  geom_point(alpha = 0.3, size = 1.5) +
+  facet_wrap(~shot_type) +
+  transition_states(season) +
+  labs(title = "Shot Selection Evolution: {closest_state}") +
+  theme_void()
+
+anim_obj <- animate(
+  p_heatmap_anim,
+  fps      = 10,
+  duration = 20,
+  renderer = gifski_renderer()
+)
+
+anim_save("shot_selection_evolution.gif", animation = anim_obj)
+```
+
+```{r}
+knitr::include_graphics("shot_selection_evolution.gif")
+```
+
+## TASK9 多变量探索性分析 (EDA) pair‑plot
+## 同时观察 投篮距离、回合剩余时间、比赛节次 之间的关系；
+## 通过颜色区分 “命中 / 未中”，发现 哪些变量或组合对命中率可能有影响；
+## 查看变量间的相关性
+```{r}
+
+shots_small <- shots %>%
+  select(
+    shot_distance,      
+    seconds_remaining, 
+    period,
+    shot_made_flag      
+  ) %>%
+  mutate(
+    made = factor(
+      shot_made_flag,
+      levels = c(0, 1),
+      labels = c("Miss", "Make")
+    )
+  )
+
+GGally::ggpairs(
+  shots_small,
+  aes(color  = made, alpha = 0.6),
+  columns = 1:3,        # 数值型列：shot_distance, seconds_remaining, period
+  lower   = list(continuous = "density"),
+  diag    = list(continuous = "barDiag"),
+  upper   = list(continuous = "cor")
+) +
+  theme_bw() +
+  labs(title = "Exploratory Pair Plot")
+
+```
+
+
+
+
+
